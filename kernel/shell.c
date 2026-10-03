@@ -7,12 +7,17 @@
 #include "task.h"
 #include "fs.h"
 #include "syscall.h"
+#include "user.h"
 
 #define COMMAND_SIZE 128
+#define HISTORY_MAX 16
 
 static char command[COMMAND_SIZE];
 static unsigned int command_length = 0;
 
+static char history[HISTORY_MAX][COMMAND_SIZE];
+static unsigned int history_count = 0;
+static int history_position = -1;
 
 static int string_equals(
     const char *a,
@@ -32,7 +37,6 @@ static int string_equals(
            *b == '\0';
 }
 
-
 static int string_starts_with(
     const char *text,
     const char *prefix
@@ -50,6 +54,24 @@ static int string_starts_with(
     return 1;
 }
 
+static void string_copy(
+    char *destination,
+    const char *source
+)
+{
+    unsigned int i = 0;
+
+    while (source[i] &&
+           i < COMMAND_SIZE - 1)
+    {
+        destination[i] =
+            source[i];
+
+        i++;
+    }
+
+    destination[i] = '\0';
+}
 
 static void command_clear(void)
 {
@@ -57,6 +79,148 @@ static void command_clear(void)
     command[0] = '\0';
 }
 
+static void clear_current_line(void)
+{
+    while (command_length > 0)
+        shell_backspace();
+}
+
+static void history_add(
+    const char *value
+)
+{
+    if (value == 0 ||
+        value[0] == '\0')
+        return;
+
+    if (history_count > 0 &&
+        string_equals(
+            history[
+                history_count - 1
+            ],
+            value))
+    {
+        return;
+    }
+
+    if (history_count < HISTORY_MAX)
+    {
+        string_copy(
+            history[history_count],
+            value
+        );
+
+        history_count++;
+        return;
+    }
+
+    for (unsigned int i = 1;
+         i < HISTORY_MAX;
+         i++)
+    {
+        string_copy(
+            history[i - 1],
+            history[i]
+        );
+    }
+
+    string_copy(
+        history[HISTORY_MAX - 1],
+        value
+    );
+}
+
+void shell_history_up(void)
+{
+    if (history_count == 0)
+        return;
+
+    if (history_position < 0)
+    {
+        history_position =
+            (int)history_count - 1;
+    }
+    else if (history_position > 0)
+    {
+        history_position--;
+    }
+    else
+    {
+        return;
+    }
+
+    clear_current_line();
+
+    string_copy(
+        command,
+        history[history_position]
+    );
+
+    command_length = 0;
+
+    while (command[command_length] &&
+           command_length <
+               COMMAND_SIZE - 1)
+    {
+        console_putc(
+            command[command_length]
+        );
+
+        command_length++;
+    }
+}
+
+void shell_history_down(void)
+{
+    if (history_count == 0 ||
+        history_position < 0)
+        return;
+
+    clear_current_line();
+
+    if (history_position <
+        (int)history_count - 1)
+    {
+        history_position++;
+
+        string_copy(
+            command,
+            history[history_position]
+        );
+    }
+    else
+    {
+        history_position = -1;
+        command[0] = '\0';
+        command_length = 0;
+        return;
+    }
+
+    command_length = 0;
+
+    while (command[command_length] &&
+           command_length <
+               COMMAND_SIZE - 1)
+    {
+        console_putc(
+            command[command_length]
+        );
+
+        command_length++;
+    }
+}
+
+void shell_cancel(void)
+{
+    clear_current_line();
+
+    console_write("^C\n");
+
+    command_clear();
+    history_position = -1;
+
+    console_write("> ");
+}
 
 static void print_two_digits(
     unsigned int value
@@ -71,12 +235,13 @@ static void print_two_digits(
     );
 }
 
-
 static void execute_command(void)
 {
     if (command_length == 0)
         return;
 
+    history_add(command);
+    history_position = -1;
 
     if (string_equals(command, "help"))
     {
@@ -95,22 +260,24 @@ static void execute_command(void)
         console_write("  cat <file>\n");
         console_write("  write <file> <text>\n");
         console_write("  rm <file>\n");
+        console_write("  format\n");
 
         console_write("  ps\n");
         console_write("  spawn\n");
         console_write("  yield\n");
 
         console_write("  syscall\n");
+        console_write("  run <file>\n");
     }
-
 
     else if (string_equals(command, "clear"))
     {
         console_clear();
         command_clear();
+
+        console_write("> ");
         return;
     }
-
 
     else if (string_equals(command, "about"))
     {
@@ -125,12 +292,10 @@ static void execute_command(void)
         );
     }
 
-
     else if (string_equals(command, "mem"))
     {
         memory_print_info();
     }
-
 
     else if (string_equals(command, "ticks"))
     {
@@ -142,7 +307,6 @@ static void execute_command(void)
 
         console_write("\n");
     }
-
 
     else if (string_equals(command, "time"))
     {
@@ -170,7 +334,6 @@ static void execute_command(void)
         console_putc('\n');
     }
 
-
     else if (string_equals(command, "cpu"))
     {
         const struct cpu_info *info =
@@ -196,23 +359,22 @@ static void execute_command(void)
 
         console_write("Long mode: ");
         console_write(
-            info->long_mode ? "yes" : "no"
+            info->long_mode
+                ? "yes"
+                : "no"
         );
         console_putc('\n');
     }
-
 
     else if (string_equals(command, "ls"))
     {
         fs_list();
     }
 
-
     else if (string_starts_with(command, "cat "))
     {
         fs_cat(command + 4);
     }
-
 
     else if (string_starts_with(command, "rm "))
     {
@@ -226,13 +388,13 @@ static void execute_command(void)
         }
     }
 
-
     else if (string_starts_with(command, "write "))
     {
         char *arguments =
             command + 6;
 
-        char *separator = arguments;
+        char *separator =
+            arguments;
 
         while (*separator &&
                *separator != ' ')
@@ -267,24 +429,36 @@ static void execute_command(void)
         }
     }
 
+    else if (string_equals(command, "format"))
+    {
+        if (fs_format() == 0)
+        {
+            console_write(
+                "Filesystem formatted.\n"
+            );
+        }
+        else
+        {
+            console_write(
+                "Filesystem format failed.\n"
+            );
+        }
+    }
 
     else if (string_equals(command, "ps"))
     {
         task_list();
     }
 
-
     else if (string_equals(command, "spawn"))
     {
         task_spawn_demo();
     }
 
-
     else if (string_equals(command, "yield"))
     {
         task_yield();
     }
-
 
     else if (string_equals(command, "syscall"))
     {
@@ -296,18 +470,26 @@ static void execute_command(void)
             );
 
         console_write("Return value: ");
+
         console_write_uint(
             (unsigned long long)result
         );
+
         console_write("\n");
     }
 
+    else if (string_starts_with(
+        command,
+        "run "))
+    {
+        if (user_run(command + 4) != 0)
+            console_write("Run failed.\n");
+    }
 
     else if (string_equals(command, "echo"))
     {
         console_putc('\n');
     }
-
 
     else if (string_starts_with(
         command,
@@ -317,7 +499,6 @@ static void execute_command(void)
         console_putc('\n');
     }
 
-
     else
     {
         console_write("Unknown command: ");
@@ -325,30 +506,30 @@ static void execute_command(void)
         console_putc('\n');
     }
 
-
     command_clear();
 }
-
 
 void shell_init(void)
 {
     command_clear();
+    history_position = -1;
 
     console_write("> ");
 }
 
-
 void shell_input(char c)
 {
-    if (command_length >= COMMAND_SIZE - 1)
+    if (command_length >=
+        COMMAND_SIZE - 1)
         return;
 
     command[command_length++] = c;
     command[command_length] = '\0';
 
+    history_position = -1;
+
     console_putc(c);
 }
-
 
 void shell_backspace(void)
 {
@@ -361,7 +542,6 @@ void shell_backspace(void)
 
     console_backspace();
 }
-
 
 void shell_enter(void)
 {

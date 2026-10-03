@@ -64,6 +64,14 @@ void task_init(void)
         tasks[i].entry = 0;
         tasks[i].arg = 0;
         tasks[i].stack = 0;
+
+        tasks[i].context.rsp = 0;
+        tasks[i].context.rbx = 0;
+        tasks[i].context.rbp = 0;
+        tasks[i].context.r12 = 0;
+        tasks[i].context.r13 = 0;
+        tasks[i].context.r14 = 0;
+        tasks[i].context.r15 = 0;
     }
 
     /*
@@ -116,16 +124,42 @@ int task_create(
         (unsigned long long)stack +
         (TASK_STACK_PAGES * 4096ULL);
 
+    /*
+     * Keep the stack aligned.
+     */
     stack_top &= ~0xFULL;
 
-    /*
-     * task_switch ends with RET.
-     * Put task_trampoline where RET will find it.
-     */
-    unsigned long long *return_address =
-        (unsigned long long *)(stack_top - 8);
 
-    *return_address =
+    /*
+     * task_switch() expects the new stack to contain:
+     *
+     *   +0   r15
+     *   +8   r14
+     *   +16  r13
+     *   +24  r12
+     *   +32  rbp
+     *   +40  rbx
+     *   +48  return RIP
+     *
+     * task_switch() restores those registers and then
+     * executes RET.
+     */
+    unsigned long long *stack_frame =
+        (unsigned long long *)
+        (stack_top - 7 * sizeof(unsigned long long));
+
+
+    stack_frame[0] = 0;  /* r15 */
+    stack_frame[1] = 0;  /* r14 */
+    stack_frame[2] = 0;  /* r13 */
+    stack_frame[3] = 0;  /* r12 */
+    stack_frame[4] = 0;  /* rbp */
+    stack_frame[5] = 0;  /* rbx */
+
+    /*
+     * First instruction executed by the new task.
+     */
+    stack_frame[6] =
         (unsigned long long)task_trampoline;
 
 
@@ -136,7 +170,7 @@ int task_create(
     tasks[slot].stack = stack;
 
     tasks[slot].context.rsp =
-        stack_top - 8;
+        (unsigned long long)stack_frame;
 
     tasks[slot].context.rbx = 0;
     tasks[slot].context.rbp = 0;
@@ -149,6 +183,56 @@ int task_create(
 }
 
 
+/*
+ * Simple demonstration task used by the shell's "spawn"
+ * command.
+ */
+static void demo_task(void *arg)
+{
+    (void)arg;
+
+    for (;;)
+    {
+        console_write("demo task running\n");
+
+        /*
+         * Small delay so the console isn't flooded.
+         */
+        for (volatile unsigned long i = 0;
+             i < 1000000UL;
+             i++)
+        {
+            __asm__ volatile ("pause");
+        }
+
+        task_yield();
+    }
+}
+
+
+void task_spawn_demo(void)
+{
+    int pid = task_create(
+        demo_task,
+        0
+    );
+
+    if (pid < 0)
+    {
+        console_write("spawn: failed\n");
+        return;
+    }
+
+    console_write("spawned PID ");
+
+    console_write_uint(
+        (unsigned int)pid
+    );
+
+    console_write("\n");
+}
+
+
 void task_yield(void)
 {
     int next = find_ready_task();
@@ -156,21 +240,25 @@ void task_yield(void)
     if (next < 0)
         return;
 
+
     unsigned int old =
         current_task;
 
     unsigned int new_task =
         (unsigned int)next;
 
+
     tasks[old].state = TASK_READY;
     tasks[new_task].state = TASK_RUNNING;
 
     current_task = new_task;
 
+
     task_switch(
         &tasks[old].context,
         &tasks[new_task].context
     );
+
 
     /*
      * Execution reaches here when the old
@@ -188,17 +276,14 @@ void task_exit(void)
     unsigned int old =
         current_task;
 
+
+    /*
+     * Do NOT free the current task's stack here.
+     *
+     * We are still executing on it.
+     */
     task->state = TASK_DEAD;
 
-    if (task->stack != 0)
-    {
-        page_free_contiguous(
-            task->stack,
-            TASK_STACK_PAGES
-        );
-
-        task->stack = 0;
-    }
 
     int next = find_ready_task();
 
@@ -213,6 +298,7 @@ void task_exit(void)
         }
     }
 
+
     unsigned int new_task =
         (unsigned int)next;
 
@@ -221,11 +307,16 @@ void task_exit(void)
 
     current_task = new_task;
 
+
     task_switch(
         &tasks[old].context,
         &tasks[new_task].context
     );
 
+
+    /*
+     * An exited task must never resume.
+     */
     for (;;)
     {
         __asm__ volatile ("hlt");
@@ -237,6 +328,7 @@ void task_list(void)
 {
     console_write("PID  STATE\n");
 
+
     for (unsigned int i = 0;
          i < TASK_MAX;
          i++)
@@ -244,11 +336,13 @@ void task_list(void)
         if (tasks[i].state == TASK_UNUSED)
             continue;
 
+
         console_write_uint(
             tasks[i].pid
         );
 
         console_write("    ");
+
 
         switch (tasks[i].state)
         {
@@ -269,41 +363,6 @@ void task_list(void)
                 break;
         }
 
-        console_putc('\n');
+        console_write("\n");
     }
-}
-
-
-static void demo_task(void *arg)
-{
-    (void)arg;
-
-    for (int i = 1; i <= 3; i++)
-    {
-        console_write("Demo task iteration: ");
-        console_write_uint(i);
-        console_putc('\n');
-
-        task_yield();
-    }
-}
-
-
-void task_spawn_demo(void)
-{
-    int pid =
-        task_create(demo_task, 0);
-
-    if (pid < 0)
-    {
-        console_write(
-            "Failed to create task.\n"
-        );
-
-        return;
-    }
-
-    console_write("Created task PID ");
-    console_write_uint((unsigned int)pid);
-    console_putc('\n');
 }

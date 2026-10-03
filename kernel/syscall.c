@@ -2,6 +2,7 @@
 #include "console.h"
 #include "timer.h"
 #include "memory.h"
+#include "user.h"
 
 struct syscall_frame
 {
@@ -12,7 +13,6 @@ struct syscall_frame
     unsigned long long rbp;
     unsigned long long rsi;
     unsigned long long rdi;
-
     unsigned long long r8;
     unsigned long long r9;
     unsigned long long r10;
@@ -23,57 +23,73 @@ struct syscall_frame
     unsigned long long r15;
 };
 
-
 void syscall_dispatch(
     struct syscall_frame *frame
 )
 {
+    if (frame == 0)
+        return;
+
     switch (frame->rax)
     {
         case SYS_WRITE:
         {
-            /*
-             * Kernel-only for now.
-             * User pointer validation comes
-             * when user mode is implemented.
-             */
-            console_write(
-                (const char *)frame->rdi
-            );
+            char text[256];
 
-            frame->rax = 0;
+            int length =
+                user_copy_string(
+                    (const char *)frame->rdi,
+                    text,
+                    sizeof(text)
+                );
+
+            if (length < 0)
+            {
+                frame->rax =
+                    (unsigned long long)-1;
+
+                break;
+            }
+
+            console_write(text);
+
+            frame->rax =
+                (unsigned long long)length;
+
             break;
         }
 
-
         case SYS_TICKS:
-        {
+
             frame->rax =
                 timer_get_ticks();
 
             break;
-        }
-
 
         case SYS_FREE_PAGES:
-        {
+
             frame->rax =
                 memory_free_pages();
 
             break;
-        }
 
+        case SYS_EXIT:
+
+            frame->rax = 0;
+
+            user_exit_to_kernel();
+
+            for (;;)
+                __asm__ volatile ("hlt");
 
         default:
-        {
+
             frame->rax =
                 (unsigned long long)-1;
 
             break;
-        }
     }
 }
-
 
 long syscall0(
     unsigned long number
@@ -90,7 +106,6 @@ long syscall0(
 
     return result;
 }
-
 
 long syscall1(
     unsigned long number,

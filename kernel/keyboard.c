@@ -1,8 +1,10 @@
 #include "keyboard.h"
 #include "io.h"
 #include "shell.h"
+#include "user.h"
 
 static int shift_pressed = 0;
+static int ctrl_pressed = 0;
 
 static const char keymap[128] =
 {
@@ -32,32 +34,126 @@ static const char shiftmap[128] =
 
 void keyboard_handler(void)
 {
-    unsigned char scancode = inb(0x60);
+    static int extended = 0;
 
-    if (scancode == 0x2A || scancode == 0x36)
+    unsigned char scancode =
+        inb(0x60);
+
+    /*
+     * Extended PS/2 sequence.
+     */
+    if (scancode == 0xE0)
+    {
+        extended = 1;
+        return;
+    }
+
+    /*
+     * Extended key release.
+     */
+    if (extended &&
+        (scancode & 0x80))
+    {
+        extended = 0;
+        return;
+    }
+
+    /*
+     * Left/right shift.
+     */
+    if (scancode == 0x2A ||
+        scancode == 0x36)
     {
         shift_pressed = 1;
+        extended = 0;
         return;
     }
 
-    if (scancode == 0xAA || scancode == 0xB6)
+    if (scancode == 0xAA ||
+        scancode == 0xB6)
     {
         shift_pressed = 0;
+        extended = 0;
         return;
     }
 
-    /* Key release */
+    /*
+     * Ctrl.
+     */
+    if (scancode == 0x1D)
+    {
+        ctrl_pressed = 1;
+        extended = 0;
+        return;
+    }
+
+    if (scancode == 0x9D)
+    {
+        ctrl_pressed = 0;
+        extended = 0;
+        return;
+    }
+
+    /*
+     * Extended Up Arrow.
+     */
+    if (extended &&
+        scancode == 0x48)
+    {
+        shell_history_up();
+        extended = 0;
+        return;
+    }
+
+    /*
+     * Extended Down Arrow.
+     */
+    if (extended &&
+        scancode == 0x50)
+    {
+        shell_history_down();
+        extended = 0;
+        return;
+    }
+
+    extended = 0;
+
+    /*
+     * Ignore all key releases.
+     */
     if (scancode & 0x80)
         return;
 
-    /* Enter */
+    /*
+     * Ctrl+C.
+     */
+    if (ctrl_pressed &&
+        scancode == 0x2E)
+    {
+        if (user_process_active())
+        {
+            user_request_terminate();
+        }
+        else
+        {
+            shell_cancel();
+        }
+
+        return;
+    }
+
+    /*
+     * Enter.
+     */
     if (scancode == 0x1C)
     {
         shell_enter();
         return;
     }
 
-    /* Backspace */
+    /*
+     * Backspace.
+     */
     if (scancode == 0x0E)
     {
         shell_backspace();
@@ -67,7 +163,8 @@ void keyboard_handler(void)
     if (scancode >= 128)
         return;
 
-    char c = shift_pressed
+    char c =
+        shift_pressed
         ? shiftmap[scancode]
         : keymap[scancode];
 

@@ -4,24 +4,52 @@ global task_switch
 
 section .text
 
+; void task_switch(struct task_context *old,
+;                  struct task_context *new)
+;
+; struct task_context contains:
+;   +0   rsp
+;   +8   rbx
+;   +16  rbp
+;   +24  r12
+;   +32  r13
+;   +40  r14
+;   +48  r15
+;
+; The saved stack itself contains:
+;   r15
+;   r14
+;   r13
+;   r12
+;   rbp
+;   rbx
+;   return RIP
+;
+; RDI = old context
+; RSI = new context
+
 task_switch:
-    ; rdi = old context
-    ; rsi = new context
+    ; Save callee-saved registers of current task.
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
 
-    mov [rdi + 0],  rsp
-    mov [rdi + 8],  rbx
-    mov [rdi + 16], rbp
-    mov [rdi + 24], r12
-    mov [rdi + 32], r13
-    mov [rdi + 40], r14
-    mov [rdi + 48], r15
+    ; Save current task's stack pointer.
+    mov [rdi], rsp
 
-    mov rsp, [rsi + 0]
-    mov rbx, [rsi + 8]
-    mov rbp, [rsi + 16]
-    mov r12, [rsi + 24]
-    mov r13, [rsi + 32]
-    mov r14, [rsi + 40]
-    mov r15, [rsi + 48]
+    ; Load next task's stack pointer.
+    mov rsp, [rsi]
 
+    ; Restore next task's callee-saved registers.
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+
+    ; Return to the next task.
     ret
