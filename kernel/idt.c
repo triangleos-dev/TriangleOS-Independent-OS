@@ -23,6 +23,8 @@ static struct idt_ptr idtr;
 extern void default_isr(void);
 extern void timer_isr(void);
 extern void keyboard_isr(void);
+extern void syscall_isr(void);
+
 
 static void idt_set_gate(
     int vector,
@@ -45,6 +47,7 @@ static void idt_set_gate(
     idt[vector].reserved = 0;
 }
 
+
 void idt_init(void)
 {
     for (int i = 0; i < 256; i++)
@@ -55,26 +58,29 @@ void idt_init(void)
         );
     }
 
-    /*
-     * IRQ0 = PIT timer
-     * 0x20 = vector 32
-     */
+    /* IRQ0: PIT */
     idt_set_gate(
         32,
         (unsigned long)timer_isr
     );
 
-    /*
-     * IRQ1 = keyboard
-     * 0x21 = vector 33
-     */
+    /* IRQ1: keyboard */
     idt_set_gate(
         33,
         (unsigned long)keyboard_isr
     );
 
-    idtr.limit = sizeof(idt) - 1;
-    idtr.base = (unsigned long)&idt;
+    /* Software syscall interrupt */
+    idt_set_gate(
+        0x80,
+        (unsigned long)syscall_isr
+    );
+
+    idtr.limit =
+        sizeof(idt) - 1;
+
+    idtr.base =
+        (unsigned long)&idt;
 
     __asm__ volatile (
         "lidt %0"

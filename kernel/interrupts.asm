@@ -3,9 +3,11 @@ bits 64
 global default_isr
 global timer_isr
 global keyboard_isr
+global syscall_isr
 
 extern timer_ticks
 extern keyboard_handler
+extern syscall_dispatch
 
 section .text
 
@@ -37,14 +39,6 @@ keyboard_isr:
     push rbp
     push rsi
     push rdi
-    push r8
-    push r9
-    push r10
-    push r11
-    push r12
-    push r13
-    push r14
-    push r15
 
     cld
 
@@ -53,14 +47,6 @@ keyboard_isr:
     mov al, 0x20
     out 0x20, al
 
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop r11
-    pop r10
-    pop r9
-    pop r8
     pop rdi
     pop rsi
     pop rbp
@@ -68,5 +54,35 @@ keyboard_isr:
     pop rcx
     pop rbx
     pop rax
+
+    iretq
+
+
+syscall_isr:
+
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rbp
+    push rsi
+    push rdi
+
+    mov rdi, rsp
+
+    call syscall_dispatch
+
+    ; syscall_dispatch put the result in frame->rax
+    mov rax, [rsp + 0]
+
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rdx
+    pop rcx
+    pop rbx
+    ; Do not restore the old RAX.
+    ; We want the syscall return value.
+    add rsp, 8
 
     iretq

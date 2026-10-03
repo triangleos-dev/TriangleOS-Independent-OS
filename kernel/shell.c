@@ -3,6 +3,10 @@
 #include "memory.h"
 #include "timer.h"
 #include "rtc.h"
+#include "cpu.h"
+#include "task.h"
+#include "fs.h"
+#include "syscall.h"
 
 #define COMMAND_SIZE 128
 
@@ -77,6 +81,7 @@ static void execute_command(void)
     if (string_equals(command, "help"))
     {
         console_write("Commands:\n");
+
         console_write("  help\n");
         console_write("  clear\n");
         console_write("  echo <text>\n");
@@ -84,6 +89,18 @@ static void execute_command(void)
         console_write("  mem\n");
         console_write("  ticks\n");
         console_write("  time\n");
+        console_write("  cpu\n");
+
+        console_write("  ls\n");
+        console_write("  cat <file>\n");
+        console_write("  write <file> <text>\n");
+        console_write("  rm <file>\n");
+
+        console_write("  ps\n");
+        console_write("  spawn\n");
+        console_write("  yield\n");
+
+        console_write("  syscall\n");
     }
 
 
@@ -98,6 +115,7 @@ static void execute_command(void)
     else if (string_equals(command, "about"))
     {
         console_write("TriangleOS\n");
+
         console_write(
             "Independent x86-64 operating system.\n"
         );
@@ -110,10 +128,6 @@ static void execute_command(void)
 
     else if (string_equals(command, "mem"))
     {
-        console_write(
-            "E820 usable memory information:\n"
-        );
-
         memory_print_info();
     }
 
@@ -157,13 +171,147 @@ static void execute_command(void)
     }
 
 
+    else if (string_equals(command, "cpu"))
+    {
+        const struct cpu_info *info =
+            cpu_get_info();
+
+        console_write("Vendor: ");
+        console_write(info->vendor);
+        console_putc('\n');
+
+        console_write("Family: ");
+        console_write_uint(info->family);
+        console_putc('\n');
+
+        console_write("Model: ");
+        console_write_uint(info->model);
+        console_putc('\n');
+
+        console_write("Logical processors: ");
+        console_write_uint(
+            info->logical_processors
+        );
+        console_putc('\n');
+
+        console_write("Long mode: ");
+        console_write(
+            info->long_mode ? "yes" : "no"
+        );
+        console_putc('\n');
+    }
+
+
+    else if (string_equals(command, "ls"))
+    {
+        fs_list();
+    }
+
+
+    else if (string_starts_with(command, "cat "))
+    {
+        fs_cat(command + 4);
+    }
+
+
+    else if (string_starts_with(command, "rm "))
+    {
+        if (fs_remove(command + 3) == 0)
+        {
+            console_write("Removed.\n");
+        }
+        else
+        {
+            console_write("File not found.\n");
+        }
+    }
+
+
+    else if (string_starts_with(command, "write "))
+    {
+        char *arguments =
+            command + 6;
+
+        char *separator = arguments;
+
+        while (*separator &&
+               *separator != ' ')
+        {
+            separator++;
+        }
+
+        if (*separator == '\0')
+        {
+            console_write(
+                "Usage: write <file> <text>\n"
+            );
+        }
+        else
+        {
+            *separator = '\0';
+            separator++;
+
+            if (fs_write(
+                    arguments,
+                    separator
+                ) == 0)
+            {
+                console_write("Written.\n");
+            }
+            else
+            {
+                console_write(
+                    "Write failed.\n"
+                );
+            }
+        }
+    }
+
+
+    else if (string_equals(command, "ps"))
+    {
+        task_list();
+    }
+
+
+    else if (string_equals(command, "spawn"))
+    {
+        task_spawn_demo();
+    }
+
+
+    else if (string_equals(command, "yield"))
+    {
+        task_yield();
+    }
+
+
+    else if (string_equals(command, "syscall"))
+    {
+        long result =
+            syscall1(
+                SYS_WRITE,
+                (unsigned long)
+                "Hello from int 0x80!\n"
+            );
+
+        console_write("Return value: ");
+        console_write_uint(
+            (unsigned long long)result
+        );
+        console_write("\n");
+    }
+
+
     else if (string_equals(command, "echo"))
     {
         console_putc('\n');
     }
 
 
-    else if (string_starts_with(command, "echo "))
+    else if (string_starts_with(
+        command,
+        "echo "))
     {
         console_write(command + 5);
         console_putc('\n');
@@ -176,6 +324,7 @@ static void execute_command(void)
         console_write(command);
         console_putc('\n');
     }
+
 
     command_clear();
 }
@@ -195,7 +344,6 @@ void shell_input(char c)
         return;
 
     command[command_length++] = c;
-
     command[command_length] = '\0';
 
     console_putc(c);

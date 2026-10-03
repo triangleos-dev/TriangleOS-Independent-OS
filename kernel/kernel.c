@@ -6,6 +6,9 @@
 #include "heap.h"
 #include "timer.h"
 #include "rtc.h"
+#include "cpu.h"
+#include "task.h"
+#include "fs.h"
 
 
 static void print_hex(
@@ -36,51 +39,29 @@ void kernel_main(void)
         "TriangleOS kernel started!\n"
     );
 
-    console_write(
-        "Initializing interrupts...\n"
-    );
+
+    cpu_init();
+
 
     idt_init();
     pic_init();
 
-    console_write(
-        "Initializing timer...\n"
-    );
 
     timer_init();
 
-    console_write(
-        "Timer ready: 100 Hz\n"
-    );
-
-    console_write(
-        "Initializing RTC...\n"
-    );
 
     rtc_init();
 
-    console_write(
-        "RTC ready.\n"
-    );
-
-    console_write(
-        "Keyboard ready.\n"
-    );
-
-    console_write(
-        "Initializing physical memory...\n"
-    );
 
     memory_init();
 
-    memory_print_info();
 
-
-    void *page = page_alloc();
+    void *page =
+        page_alloc();
 
     if (page != 0)
     {
-        console_write("Allocated page: ");
+        console_write("Page allocator: OK at ");
 
         print_hex(
             (unsigned long long)page
@@ -89,15 +70,11 @@ void kernel_main(void)
         console_putc('\n');
 
         page_free(page);
-
-        console_write(
-            "Page successfully freed.\n"
-        );
     }
     else
     {
         console_write(
-            "ERROR: page allocation failed.\n"
+            "Page allocator: FAILED\n"
         );
     }
 
@@ -106,7 +83,7 @@ void kernel_main(void)
 
 
     char *buffer =
-        (char *)kmalloc(128);
+        (char *)kmalloc(64);
 
     if (buffer != 0)
     {
@@ -116,30 +93,41 @@ void kernel_main(void)
         buffer[3] = 'p';
         buffer[4] = ' ';
         buffer[5] = 'O';
-        buffer[6] = 'K';
-        buffer[7] = '\0';
+        buffer[6] = 'O';
+        buffer[7] = 'K';
+        buffer[8] = '\0';
 
-        console_write("Heap test: ");
         console_write(buffer);
         console_putc('\n');
 
         kfree(buffer);
+    }
 
-        console_write(
-            "Heap block freed.\n"
-        );
-    }
-    else
-    {
-        console_write(
-            "ERROR: heap allocation failed.\n"
-        );
-    }
+
+    task_init();
+
+    console_write(
+        "Task manager: ready\n"
+    );
+
+
+    fs_init();
+
+    console_write(
+        "RAM filesystem: ready\n"
+    );
+
+
+    console_write(
+        "System call interface: ready\n"
+    );
 
 
     shell_init();
 
+
     __asm__ volatile ("sti");
+
 
     for (;;)
     {
