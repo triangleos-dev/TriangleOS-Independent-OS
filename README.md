@@ -1,5 +1,6 @@
 # TriangleOS
-An independent x86-64 operating system built from the ground up.TriangleOS is an experimental operating system built from the ground up.
+An independent x86-64 operating system built from the ground up.
+TriangleOS is an experimental operating system built from the ground up.
 
 It is not based on the Linux kernel or intended to be a Linux/Unix distribution.
 
