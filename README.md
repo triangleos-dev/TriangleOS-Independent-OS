@@ -10,3 +10,6 @@ x86-64 only- Independent kernel- Independent boot process- Own hardware and syst
 ## Current Status
 🚧 Early development TriangleOS is currently in the planning and initial development stage.
 The first milestone is a bootable x86-64 system capable of initializing its kernel and displaying basic output.
+
+## Update
+I will not update this system for now. I am literally cant progress.
