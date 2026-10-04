@@ -13,3 +13,4 @@ The first milestone is a bootable x86-64 system capable of initializing its kern
 
 ## Update
 I will not update this system for now. I am literally cant progress.
+I will make TriangleOS based on linux at another repository, making own kernel from scratch is a torture.
